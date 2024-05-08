@@ -95,6 +95,7 @@ function forward(::BroadcastedOperator{typeof(conv)}, x, w)
     x_pad = zeros(H + 2 * cv_dt.p, W + 2 * cv_dt.p, C)
 
     x_pad[cv_dt.p+1:end-cv_dt.p, cv_dt.p+1:end-cv_dt.p, :] = x
+
     out = zeros(cv_dt.out_h, cv_dt.out_w, K, 1)
     for i ∈ 1:cv_dt.out_h
         for j ∈ 1:cv_dt.out_w
@@ -123,8 +124,7 @@ function backward(::BroadcastedOperator{typeof(conv)}, x, w, g)
 
     for i ∈ 1:out_h
         for j ∈ 1:out_w
-            r_field =
-                x_pad[(i-1)*stride+1:(i-1)*stride+FH, (j-1)*stride+1:(j-1)*stride+FW, :, :]
+            r_field = x_pad[(i-1)*stride+1:(i-1)*stride+FH, (j-1)*stride+1:(j-1)*stride+FW, :, :]
 
             r_field_flat = reshape(r_field, FH * FW * C, :)
             w_flat = reshape(w, FH * FW * C, K)
@@ -166,10 +166,14 @@ function backward(::BroadcastedOperator{typeof(maxpool)}, x, n, g)
         M, N, C = size(x)
         M_out, N_out, _ = size(g)
         dx = zeros(Float64, M, N, C)
-        for c = 1:C, i = 1:M_out, j = 1:N_out
-            @views pool = x[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c]
-            mask = (pool .== maximum(pool))
-            dx[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c] = mask * g[i, j, c]
+        for c = 1:C
+            for i = 1:M_out
+                for j = 1:N_out
+                    @views pool = x[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c]
+                    mask = (pool .== maximum(pool))
+                    dx[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c] = mask * g[i, j, c]
+                end
+            end
         end
         tuple(dx)
     end

@@ -49,7 +49,7 @@ backward(node::BroadcastedOperator{typeof(/)}, x, y::Real, g) =
     end
 
 Base.Broadcast.broadcasted(log, x::GraphNode) = BroadcastedOperator(log, x)
-forward(::BroadcastedOperator{typeof(log)}, x) =  log.(x)
+forward(::BroadcastedOperator{typeof(log)}, x) = log.(x)
 backward(::BroadcastedOperator{typeof(log)}, x, g) = tuple(g ./ x)
 
 Base.Broadcast.broadcasted(max, x::GraphNode, y::GraphNode) = BroadcastedOperator(max, x, y)
@@ -82,20 +82,24 @@ backward(::BroadcastedOperator{typeof(flatten)}, x, g) = reshape(g, size(x))
 conv(x::GraphNode, w::GraphNode) = BroadcastedOperator(conv, x, w)
 
 function forward(::BroadcastedOperator{typeof(conv)}, x, w)
-    padding = 0
-    stride = 1
     (H, W, C) = size(x)
     (FH, FW, _, K) = size(w)
-    out_h = Int(floor((H + 2 * padding - FH) / stride)) + 1
-    out_w = Int(floor((W + 2 * padding - FW) / stride)) + 1
-    p = padding
-    x_pad = zeros(H + 2p, W + 2p, C)
-    x_pad[p+1:end-p, p+1:end-p, :] = x
-    out = zeros(out_h, out_w, K, 1)
-    for i ∈ 1:out_h
-        for j ∈ 1:out_w
+
+    cv_dt = (;
+        p=0, #padding
+        st=1, #stride
+        out_h=Int(floor((H + 2 * 0 - FH) / 1)) + 1,
+        out_w=Int(floor((W + 2 * 0 - FW) / 1)) + 1
+    )
+
+    x_pad = zeros(H + 2 * cv_dt.p, W + 2 * cv_dt.p, C)
+
+    x_pad[cv_dt.p+1:end-cv_dt.p, cv_dt.p+1:end-cv_dt.p, :] = x
+    out = zeros(cv_dt.out_h, cv_dt.out_w, K, 1)
+    for i ∈ 1:cv_dt.out_h
+        for j ∈ 1:cv_dt.out_w
             r_field =
-                x_pad[(i-1)*stride+1:(i-1)*stride+FH, (j-1)*stride+1:(j-1)*stride+FW, :, :]
+                x_pad[(i-1)*cv_dt.st+1:(i-1)*cv_dt.st+FH, (j-1)*cv_dt.st+1:(j-1)*cv_dt.st+FW, :, :]
 
             r_field_flat = reshape(r_field, FH * FW * C, :)
             w_flat = reshape(w, FH * FW * C, K)
@@ -162,14 +166,10 @@ function backward(::BroadcastedOperator{typeof(maxpool)}, x, n, g)
         M, N, C = size(x)
         M_out, N_out, _ = size(g)
         dx = zeros(Float64, M, N, C)
-        for c = 1:C
-            for i = 1:M_out
-                for j = 1:N_out
-                    @views pool = x[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c]
-                    mask = (pool .== maximum(pool))
-                    dx[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c] = mask * g[i, j, c]
-                end
-            end
+        for c = 1:C, i = 1:M_out, j = 1:N_out
+            @views pool = x[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c]
+            mask = (pool .== maximum(pool))
+            dx[1+(i-1)*n:i*n, 1+(j-1)*n:j*n, c] = mask * g[i, j, c]
         end
         tuple(dx)
     end

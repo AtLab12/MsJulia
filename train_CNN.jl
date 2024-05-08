@@ -19,8 +19,8 @@ test_data_y = convert(Matrix{Float64}, onehotbatch(test_data_y, sort(unique(test
 train_size = size(train_data_x, 4)
 test_size = size(test_data_x, 4)
 
-input_x = Variable(zeros(4))
-input_y = Variable(zeros(10))
+input_x = Variable{Any}(output=zeros(4))
+input_y = Variable{Any}(output=zeros(10))
 
 settings = (
     epochs=3,
@@ -35,9 +35,9 @@ flatten_neurons = 1014
 hidden_neurons = 84
 output_neurons = 10
 
-wc = Variable(randn(kernel_size, kernel_size, conv_input, conv_output) .* 0.1)
-wh = Variable(randn(hidden_neurons, flatten_neurons) .* 0.1)
-wo = Variable(randn(output_neurons, hidden_neurons) .* 0.1)
+wc = Variable{Array{Float64,4}}(output=(randn(kernel_size, kernel_size, conv_input, conv_output) .* 0.1))
+wh = Variable{Matrix{Float64}}(output=(randn(hidden_neurons, flatten_neurons) .* 0.1))
+wo = Variable{Matrix{Float64}}(output=(randn(output_neurons, hidden_neurons) .* 0.1))
 
 function dense(w, x, activation)
     return activation(w * x)

@@ -9,11 +9,12 @@ struct Constant{T} <: GraphNode
     output::T
 end
 
-mutable struct Variable{F} <: GraphNode
-    output::Any
-    gradient::Any
-    name::String
-    Variable(output; name="?") = new{typeof(output)}(output, nothing, name)
+using Parameters
+
+@with_kw mutable struct Variable{F} <: GraphNode
+    output::F
+    gradient::Any = nothing
+    name::String = "?"
 end
 
 mutable struct ScalarOperator{F} <: Operator
@@ -90,7 +91,6 @@ end
 update!(node::Constant, gradient) = nothing
 update!(node::GraphNode, gradient) =
     if isnothing(node.gradient)
-
         node.gradient = gradient
     else
         node.gradient .+= gradient

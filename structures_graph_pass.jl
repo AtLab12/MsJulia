@@ -1,4 +1,5 @@
 using LinearAlgebra
+import LinearAlgebra: mul!
 
 abstract type GraphNode end
 abstract type DescentMethod end

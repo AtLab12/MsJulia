@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-import torch.cuda.memory as memory
 import time
+from memory_profiler import memory_usage
+import psutil
 
 transform = transforms.Compose([transforms.ToTensor()])
 train_dataset = datasets.MNIST(
@@ -65,14 +66,38 @@ def evaluate_model(model, test_loader, device):
     print("Accuracy of the network on the test images: %d %%" % accuracy)
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = MNIST_CNN().to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters())
+def measure_time_and_memory(func):
+    start_time = time.time()
+    mem_usage = memory_usage((func,))
+    end_time = time.time()
+    print(f"Elapsed time: {end_time - start_time} seconds")
+    print(f"Memory usage: {max(mem_usage) - min(mem_usage)} MiB")
 
-start_time = time.time()
-for epoch in range(3):
-    print(f"Starting epoch {epoch+1}")
-    train_model(model, train_loader, criterion, optimizer, device)
-    evaluate_model(model, test_loader, device)
-print("Elapsed time:", time.time() - start_time, " seconds")
+
+if __name__ == "__main__":
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    model = MNIST_CNN().to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters())
+
+    for epoch in range(3):
+        print(f"Starting epoch {epoch+1}")
+
+        def train_func():
+            train_model(model, train_loader, criterion, optimizer, device)
+
+        def eval_func():
+            evaluate_model(model, test_loader, device)
+
+        print(
+            "Before training epoch - Current CPU memory usage:",
+            psutil.Process().memory_info().rss / (1024**2),
+            "MiB",
+        )
+        measure_time_and_memory(train_func)
+        print(
+            "After training epoch - Current CPU memory usage:",
+            psutil.Process().memory_info().rss / (1024**2),
+            "MiB",
+        )
+        measure_time_and_memory(eval_func)

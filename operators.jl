@@ -81,65 +81,51 @@ backward(::BroadcastedOperator{typeof(flatten)}, x, g) = reshape(g, size(x))
 
 conv(x::GraphNode, w::GraphNode) = BroadcastedOperator(conv, x, w)
 
-function forward(::BroadcastedOperator{typeof(conv)}, x, w)
-    (H, W, C) = size(x)
-    (FH, FW, _, K) = size(w)
+using LoopVectorization
+using Tullio
 
-    cv_dt = (;
-        p=0, #padding
-        st=1, #stride
-        out_h=Int(floor((H + 2 * 0 - FH) / 1)) + 1,
-        out_w=Int(floor((W + 2 * 0 - FW) / 1)) + 1
-    )
-
-    x_pad = zeros(H + 2 * cv_dt.p, W + 2 * cv_dt.p, C)
-
-    x_pad[cv_dt.p+1:end-cv_dt.p, cv_dt.p+1:end-cv_dt.p, :] = x
-
-    out = zeros(cv_dt.out_h, cv_dt.out_w, K, 1)
-    for i ∈ 1:cv_dt.out_h
-        for j ∈ 1:cv_dt.out_w
-            r_field =
-                x_pad[(i-1)*cv_dt.st+1:(i-1)*cv_dt.st+FH, (j-1)*cv_dt.st+1:(j-1)*cv_dt.st+FW, :, :]
-
-            r_field_flat = reshape(r_field, FH * FW * C, :)
-            w_flat = reshape(w, FH * FW * C, K)
-            out[i, j, :] = sum(w_flat .* r_field_flat, dims=1)
-        end
-    end
-    return out
-end
-function backward(::BroadcastedOperator{typeof(conv)}, x, w, g)
+function forward(::BroadcastedOperator{typeof(conv)}, x::SubArray{Float32,3,Array{Float32,4}}, w::Array{Float64,4})
     padding = 0
     stride = 1
     (H, W, C) = size(x)
     (FH, FW, _, K) = size(w)
+
+    # Precompute output dimensions and padding
+    out_h = Int(floor((H + 2 * padding - FH) / stride)) + 1
+    out_w = Int(floor((W + 2 * padding - FW) / stride)) + 1
+
+    # Preallocate arrays with specific types
+    x_pad = zeros(Float32, H + 2 * padding, W + 2 * padding, C)
+    x_pad[padding+1:end-padding, padding+1:end-padding, :] = x
+
+    out = zeros(Float64, out_h, out_w, K)
+
+    @tullio out[i, j, k] = sum(w[fx, fy, c, k] * x_pad[i+fx-1, j+fy-1, c] for fx in 1:FH, fy in 1:FW, c in 1:C)
+
+    return reshape(out, out_h, out_w, K, 1)
+end
+
+function backward(::BroadcastedOperator{typeof(conv)}, x::SubArray{Float32,3,Array{Float32,4}}, w::Array{Float64,4}, g::Array{Float64,4})
+    padding = 0
+    stride = 1
+    (H, W, C) = size(x)
+    (FH, FW, _, K) = size(w)
+
     out_h = Int(floor((H + 2 * padding - FH) / stride)) + 1
     out_w = Int(floor((W + 2 * padding - FW) / stride)) + 1
     p = padding
-    x_pad = zeros(H + 2p, W + 2p, C)
+
+    x_pad = zeros(Float32, H + 2 * p, W + 2 * p, C)
     x_pad[p+1:end-p, p+1:end-p, :] = x
-    gx_pad = zeros(H + 2p, W + 2p, C)
-    gw = zeros(size(w))
 
-    for i ∈ 1:out_h
-        for j ∈ 1:out_w
-            r_field = x_pad[(i-1)*stride+1:(i-1)*stride+FH, (j-1)*stride+1:(j-1)*stride+FW, :, :]
+    gx_pad = zeros(Float32, H + 2 * p, W + 2 * p, C)
+    gw = zeros(Float64, FH, FW, C, K)
 
-            r_field_flat = reshape(r_field, FH * FW * C, :)
-            w_flat = reshape(w, FH * FW * C, K)
-            dout_local = reshape(g[i, j, :], K, 1)
-            field_dout_prod = r_field_flat * dout_local'
-            field_dout_prod = reshape(field_dout_prod, FH, FW, C, K)
-            gw += field_dout_prod
-            flat_dout_prod = w_flat * dout_local
-            flat_dout_prod = reshape(flat_dout_prod, FH, FW, C, :)
-            gx_pad[(i-1)*stride+1:(i-1)*stride+FH, (j-1)*stride+1:(j-1)*stride+FW, :, :] +=
-                flat_dout_prod
-        end
-    end
+    @tullio gx_pad[i+fx-1, j+fy-1, c] += w[fx, fy, c, k] * g[i, j, k, 1] (i in 1:out_h, j in 1:out_w, fx in 1:FH, fy in 1:FW, c in 1:C, k in 1:K)
+    @tullio gw[fx, fy, c, k] += x_pad[i+fx-1, j+fy-1, c] * g[i, j, k, 1] (i in 1:out_h, j in 1:out_w, fx in 1:FH, fy in 1:FW, c in 1:C, k in 1:K)
+
     gx = gx_pad[p+1:end-p, p+1:end-p, :]
-    return tuple(gx, gw)
+    return (gx, gw)
 end
 
 maxpool(x::GraphNode, n::Constant) = BroadcastedOperator(maxpool, x, n)
@@ -178,4 +164,3 @@ function backward(::BroadcastedOperator{typeof(maxpool)}, x, n, g)
         tuple(dx)
     end
 end
-

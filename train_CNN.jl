@@ -1,5 +1,6 @@
 using MLDatasets
 import Flux: onehotbatch
+import LinearAlgebra: mul!
 include("operators.jl")
 include("structures_graph_pass.jl")
 
@@ -68,63 +69,7 @@ function network(x, wc, wh, wo, y)
     return topological_sort(loss), d2
 end
 
-##
-function trainSubset(startIndex, endIndex, graph, input_x, input_y, y_output)
-    println("Running experimental something")
-    # Julia does not support pass by value for some ungodly reason ....
-    l = Threads.SpinLock()
 
-    wcs = Vector{Array{Float64,4}}()
-    whs = Vector{Matrix{Float64}}()
-    wos = Vector{Matrix{Float64}}()
-
-    train_accuracy = 0
-
-    Threads.@threads for index in startIndex:endIndex
-        local_graph = copy(graph)
-        # println(repr(UInt64(pointer_from_objref(local_graph))))
-        @views input_x.output = train_data_x[:, :, :, Int.(index)]
-        @views input_y.output = train_data_y[Int.(index), :]
-
-        forward!(local_graph)
-        train_accuracy += argmax(vec(y_output.output)) - 1 == train_y_outputs[Int.(index)]
-        backward!(local_graph)
-        # Threads.lock(l)
-        # do not update the output, just add gradient to external array
-        if wc isa Variable
-            push!(wcs, wc.gradient)
-        end
-
-        if wh isa Variable
-            push!(whs, wh.gradient)
-        end
-
-        if wos isa Variable
-            push!(wos, wo.gradient)
-        end
-        # println("Added results from turn ", index)
-        # Threads.unlock(l)
-    end
-
-    println("completed multirheaded operation")
-
-    sum_wcs = zeros(size(wcs[1])...)
-
-    for array in sum_wcs
-        sum_wcs .+= array
-    end
-
-    avg_wcs = sum_wcs ./ length(wcs)
-
-    sum_whs = reduce(+, whs)
-    avg_whs = sum_whs / length(whs)
-
-    sum_wos = reduce(+, wos)
-    avg_wos = sum_wos / length(wos)
-
-    return avg_wcs, avg_whs, avg_wos
-end
-##
 
 function train(graph, input_x, input_y, y_output, epochs, optimizer, Wc, Wh, Wo)
     for e = 1:epochs
@@ -132,37 +77,19 @@ function train(graph, input_x, input_y, y_output, epochs, optimizer, Wc, Wh, Wo)
         test_loss = 0
         train_accuracy = 0
         test_accuracy = 0
-        ##
-        work_wave_index = 1
-        work_waves = train_size / settings.batch_size
-        l = Threads.SpinLock()
 
-        @time for loopId in 0:work_waves-1
-            println("Training loop wave ", loopId)
-            ret_wcs, ret_whs, ret_wos = trainSubset(loopId * settings.batch_size + 1, (loopId + 1) * settings.batch_size, graph, input_x, input_y, y_output)
-            Wc.gradient = ret_wcs
-            Wh.gradient = ret_whs
-            Wo.gradient = ret_wos
-            # train_accuracy += argmax(vec(y_output.output)) - 1 == train_y_outputs[j]
-            println("Completed subset")
+        println("Epoch: ", e)
+        for j in 1:train_size
+            @views input_x.output = train_data_x[:, :, :, j]
+            @views input_y.output = train_data_y[j, :]
+
+            train_loss += forward!(graph)
+            train_accuracy += argmax(vec(y_output.output)) - 1 == train_y_outputs[j]
+            backward!(graph)
+
             step!(optimizer, Wc, Wh, Wo)
         end
-
         println("Training complete")
-        ##
-        # println("Epoch: ", e)
-        # @time for j in 1:train_size
-        #     println("Pupa dupa type of ", typeof(j))
-        #     @views input_x.output = train_data_x[:, :, :, j]
-        #     @views input_y.output = train_data_y[j, :]
-
-        #     train_loss += forward!(graph)
-        #     train_accuracy += argmax(vec(y_output.output)) - 1 == train_y_outputs[j]
-        #     backward!(graph)
-
-        #     step!(optimizer, Wc, Wh, Wo)
-        # end
-
 
         train_accuracy = train_accuracy / train_size
 
@@ -179,6 +106,5 @@ function train(graph, input_x, input_y, y_output, epochs, optimizer, Wc, Wh, Wo)
     end
 end
 
-
 graph, y_output = network(input_x, wc, wh, wo, input_y)
-train(graph, input_x, input_y, y_output, settings.epochs, optimize, wc, wh, wo)
+@time train(graph, input_x, input_y, y_output, settings.epochs, optimize, wc, wh, wo)

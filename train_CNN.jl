@@ -72,7 +72,7 @@ end
 
 
 function train(graph, input_x, input_y, y_output, epochs, optimizer, Wc, Wh, Wo)
-    for e = 1:epochs
+    function runEpoch(e)
         train_loss = 0
         test_loss = 0
         train_accuracy = 0
@@ -103,6 +103,10 @@ function train(graph, input_x, input_y, y_output, epochs, optimizer, Wc, Wh, Wo)
         end
         test_accuracy = test_accuracy / test_size
         println("Test accuracy: ", test_accuracy)
+    end
+
+    for e = 1:epochs
+        @time runEpoch(e)
     end
 end
 

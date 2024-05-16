@@ -1,5 +1,8 @@
 import Base: *, -, sum, log, max
 import LinearAlgebra: mul!
+using LoopVectorization
+using Tullio
+
 include("structures_graph_pass.jl")
 
 *(A::GraphNode, x::GraphNode) = BroadcastedOperator(mul!, A, x)
@@ -80,10 +83,6 @@ backward(::BroadcastedOperator{typeof(flatten)}, x, g) = reshape(g, size(x))
 
 
 conv(x::GraphNode, w::GraphNode) = BroadcastedOperator(conv, x, w)
-
-using LoopVectorization
-using Tullio
-
 function forward(::BroadcastedOperator{typeof(conv)}, x::SubArray{Float32,3,Array{Float32,4}}, w::Array{Float64,4})
     padding = 0
     stride = 1

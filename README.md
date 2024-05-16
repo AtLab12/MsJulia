@@ -1,0 +1,1 @@
+![DALLE_2024-05-16_18 21 45_-_A_man_crying_over_his_Julia_neural_network_looking_extremely_sad_and_frustrated _He_is_sitting_at_a_desk_with_a_computer_displaying_a_lot_of_code_wh](https://github.com/AtLab12/MsJulia/assets/166712947/b0782e1e-40a0-49c0-aca5-1ef32de1f307)
